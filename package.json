@@ -9,13 +9,20 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "base-64": "^1.0.0",
     "expo": "~54.0.30",
+    "expo-document-picker": "^14.0.8",
+    "expo-file-system": "^19.0.21",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "^5.6.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@types/base-64": "^1",
     "@types/react": "~19.1.0",
+    "@types/xlsx": "^0.0.36",
     "typescript": "~5.9.2"
   },
   "private": true
