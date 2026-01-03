@@ -1,4 +1,4 @@
-// components/ExcelImporter.tsx - VERSÃO FINAL SEM EXPO-FILE-SYSTEM
+// components/ExcelImporter.tsx - VERSÃO COM CONSOLE.LOG
 import React, { useState } from 'react';
 import {
   View,
@@ -12,25 +12,31 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as XLSX from 'xlsx';
 
+// Interface para ativo
+interface Ativo {
+  id: string;      // Número do ativo
+  nome: string;    // Nome
+}
+
 const ExcelImporter: React.FC = () => {
-  const [data, setData] = useState<string[][]>([]);
+  const [ativos, setAtivos] = useState<Ativo[]>([]);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState('');
 
-  // Função que funciona em TODAS as plataformas
+  // Função de importação SIMPLES
   const importExcelFile = async () => {
     try {
       setLoading(true);
+      setAtivos([]);
       
-      // PASSO 1: Selecionar arquivo
+      // 1. Selecionar arquivo
       const result = await DocumentPicker.getDocumentAsync({
         type: [
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-          'application/vnd.ms-excel', // .xls
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
           'text/csv',
         ],
-        copyToCacheDirectory: true, // CRÍTICO para funcionar no mobile
-        multiple: false,
+        copyToCacheDirectory: true,
       });
 
       if (result.canceled) {
@@ -45,162 +51,168 @@ const ExcelImporter: React.FC = () => {
         return;
       }
 
-      setFileName(file.name || 'Arquivo sem nome');
-      console.log('📁 Processando arquivo:', file.name, 'URI:', file.uri);
+      setFileName(file.name);
       
-      // PASSO 2: Usar fetch para ler o arquivo (funciona em mobile e web)
+      // 2. Ler arquivo
       const response = await fetch(file.uri);
-      
-      if (!response.ok) {
-        throw new Error(`Falha ao ler arquivo: ${response.status}`);
-      }
-      
       const arrayBuffer = await response.arrayBuffer();
       
-      // PASSO 3: Processar com SheetJS
+      // 3. Processar Excel
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,        // Retorna array de arrays
-        defval: '',       // Valor padrão para células vazias
-        raw: false,       // Converte valores para string
+        header: 1,
+        defval: '',
+      }) as any[][];
+
+      // 4. Extrair apenas as 2 primeiras colunas
+      const novosAtivos: Ativo[] = [];
+      
+      // Pula a primeira linha (cabeçalho) e processa o resto
+      for (let i = 1; i < jsonData.length; i++) {
+        const linha = jsonData[i];
+        
+        if (Array.isArray(linha) && linha.length >= 2) {
+          const numero = String(linha[0] || '').trim();
+          const nome = String(linha[1] || '').trim();
+          
+          // Só adiciona se tiver número
+          if (numero) {
+            novosAtivos.push({
+              id: `${numero}-${i}`, // CHAVE ÚNICA: combina número com índice
+              nome: nome || `Ativo ${numero}`,
+            });
+          }
+        }
+      }
+
+      // LOG 1: Mostra os dados brutos da planilha (apenas as primeiras 5 linhas para não poluir)
+      console.log('📊 DADOS BRUTOS DA PLANILHA (primeiras 5 linhas):');
+      jsonData.slice(0, 5).forEach((linha, idx) => {
+        console.log(`Linha ${idx}:`, linha);
       });
 
-      // PASSO 4: Converter para array de arrays de strings
-      const filteredData = (jsonData as any[])
-        .filter((row: any) => 
-          Array.isArray(row) && 
-          row.some((cell: any) => 
-            cell !== null && 
-            cell !== undefined && 
-            String(cell).trim() !== ''
-          )
-        )
-        .map((row: any) => 
-          row.map((cell: any) => 
-            String(cell === null || cell === undefined ? '' : cell)
-          )
-        );
+      // LOG 2: Mostra a estrutura dos ativos extraídos
+      console.log('🎯 ATIVOS EXTRAÍDOS:');
+      novosAtivos.forEach((ativo, idx) => {
+        console.log(`Ativo ${idx + 1}:`, ativo);
+      });
 
-      setData(filteredData);
+      // LOG 3: Mostra o array completo de ativos
+      console.log('📦 ARRAY COMPLETO DE ATIVOS:', novosAtivos);
+
+      setAtivos(novosAtivos);
       
       Alert.alert(
-        '✅ Sucesso!',
-        `Arquivo "${file.name}" importado\n` +
-        `${filteredData.length} linhas × ${filteredData[0]?.length || 0} colunas`,
+        '✅ Importado!',
+        `${novosAtivos.length} ativos encontrados`
       );
       
     } catch (error: any) {
-      console.error('❌ Erro detalhado:', error);
-      Alert.alert(
-        '❌ Erro', 
-        `Não foi possível importar:\n${error.message || 'Formato inválido'}`,
-      );
+      console.error('Erro:', error);
+      Alert.alert('❌ Erro', 'Não foi possível importar o arquivo');
     } finally {
       setLoading(false);
     }
   };
 
-  // Renderização dos dados
-  const renderData = () => {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📊</Text>
-          <Text style={styles.emptyText}>Sem dados</Text>
-          <Text style={styles.emptySubtext}>
-            Importe uma planilha Excel (.xlsx, .xls) ou CSV
-          </Text>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.dataContainer}>
-        <View style={styles.stats}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{data.length}</Text>
-            <Text style={styles.statLabel}>Linhas</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{data[0]?.length || 0}</Text>
-            <Text style={styles.statLabel}>Colunas</Text>
-          </View>
-        </View>
-        
-        <ScrollView style={styles.tableContainer}>
-          {data.slice(0, 20).map((row, rowIndex) => (
-            <View key={rowIndex} style={styles.row}>
-              <Text style={styles.rowNumber}>{rowIndex + 1}</Text>
-              <ScrollView horizontal>
-                {row.map((cell, cellIndex) => (
-                  <View key={cellIndex} style={styles.cell}>
-                    <Text style={styles.cellText}>{cell}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          ))}
-          {data.length > 20 && (
-            <Text style={styles.moreText}>
-              ... e mais {data.length - 20} linhas
-            </Text>
-          )}
-        </ScrollView>
-      </View>
-    );
+  // Limpar dados
+  const limparDados = () => {
+    console.log('🗑️ Limpando dados...');
+    console.log('Estado antes de limpar:', ativos);
+    setAtivos([]);
+    setFileName('');
+    console.log('Estado depois de limpar:', []);
   };
+
+  // LOG 4: Mostra o estado atual sempre que ele mudar
+  React.useEffect(() => {
+    console.log('🔄 ESTADO ATUAL DE ATIVOS:', ativos);
+    console.log('📏 Quantidade de ativos:', ativos.length);
+  }, [ativos]);
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>📈 Leitor de Excel</Text>
-      </View>
+      {/* Cabeçalho simples */}
+      <Text style={styles.titulo}>📋 Importador de Ativos</Text>
       
-      <View style={styles.buttonWrapper}>
+      {/* Botão de importação */}
+      <View style={styles.botaoContainer}>
         <Button
-          title={loading ? "Processando..." : "📁 Importar Planilha"}
+          title={loading ? "Importando..." : "Importar Excel"}
           onPress={importExcelFile}
           disabled={loading}
           color="#2196F3"
         />
       </View>
-      
+
+      {/* Carregando */}
       {loading && (
-        <View style={styles.loading}>
+        <View style={styles.carregando}>
           <ActivityIndicator size="large" color="#2196F3" />
-          <Text style={styles.loadingText}>Lendo arquivo...</Text>
+          <Text style={styles.carregandoTexto}>Processando arquivo...</Text>
         </View>
       )}
-      
+
+      {/* Nome do arquivo */}
       {fileName && !loading && (
-        <View style={styles.fileCard}>
-          <Text style={styles.fileName}>📄 {fileName}</Text>
+        <View style={styles.arquivoInfo}>
+          <Text style={styles.arquivoNome}>Arquivo: {fileName}</Text>
         </View>
       )}
-      
-      {renderData()}
-      
-      {data.length > 0 && (
-        <View style={styles.actions}>
+
+      {/* Resumo */}
+      {ativos.length > 0 && (
+        <View style={styles.resumo}>
+          <Text style={styles.resumoTexto}>
+            📊 {ativos.length} ativos importados
+          </Text>
+        </View>
+      )}
+
+      {/* Lista de ativos */}
+      <ScrollView style={styles.listaContainer}>
+        {ativos.length === 0 ? (
+          <View style={styles.listaVazia}>
+            <Text style={styles.listaVaziaTexto}>
+              {fileName ? 'Nenhum ativo encontrado' : 'Importe um arquivo Excel'}
+            </Text>
+            <Text style={styles.listaVaziaSubtexto}>
+              Arquivo deve ter: Número do Ativo | Nome
+            </Text>
+          </View>
+        ) : (
+          ativos.map((ativo, index) => (
+            <View 
+              key={ativo.id} // CHAVE ÚNICA garantida
+              style={[
+                styles.item,
+                index % 2 === 0 ? styles.itemPar : styles.itemImpar
+              ]}
+            >
+              <View style={styles.itemCabecalho}>
+                <Text style={styles.itemNumero}>
+                  #{index + 1}
+                </Text>
+                <Text style={styles.itemAtivo}>
+                  {ativo.id.split('-')[0]} {/* Mostra só o número do ativo */}
+                </Text>
+              </View>
+              <Text style={styles.itemNome}>
+                {ativo.nome}
+              </Text>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {/* Botão limpar */}
+      {ativos.length > 0 && (
+        <View style={styles.botaoContainer}>
           <Button
-            title="🗑️ Limpar Dados"
-            onPress={() => {
-              setData([]);
-              setFileName('');
-            }}
+            title="🗑️ Limpar Lista"
+            onPress={limparDados}
             color="#F44336"
-          />
-          <View style={styles.spacer} />
-          <Button
-            title="📋 Ver no Console"
-            onPress={() => {
-              console.log('📊 Dados importados:', data);
-              Alert.alert('Console', 'Dados logados no console!');
-            }}
-            color="#4CAF50"
           />
         </View>
       )}
@@ -208,151 +220,107 @@ const ExcelImporter: React.FC = () => {
   );
 };
 
+// ESTILOS SIMPLIFICADOS
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#f5f5f5',
+    padding: 16,
+    backgroundColor: '#f8f9fa',
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 25,
-    paddingTop: 10,
-  },
-  title: {
-    fontSize: 24,
+  titulo: {
+    fontSize: 20,
     fontWeight: 'bold',
+    textAlign: 'center',
+    marginVertical: 16,
     color: '#333',
   },
-  buttonWrapper: {
-    marginBottom: 20,
-    borderRadius: 8,
-    overflow: 'hidden',
+  botaoContainer: {
+    marginBottom: 16,
   },
-  loading: {
+  carregando: {
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 16,
   },
-  loadingText: {
-    marginTop: 10,
+  carregandoTexto: {
+    marginTop: 8,
     color: '#666',
+    fontSize: 14,
   },
-  fileCard: {
-    backgroundColor: '#E3F2FD',
+  arquivoInfo: {
+    backgroundColor: '#e3f2fd',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#BBDEFB',
+    marginBottom: 16,
   },
-  fileName: {
+  arquivoNome: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#0D47A1',
+    color: '#0d47a1',
   },
-  emptyState: {
+  resumo: {
+    backgroundColor: '#e8f5e9',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  resumoTexto: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2e7d32',
+    textAlign: 'center',
+  },
+  listaContainer: {
+    flex: 1,
+    marginBottom: 16,
+  },
+  listaVazia: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 40,
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 15,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#999',
+  listaVaziaTexto: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
     marginBottom: 8,
   },
-  emptySubtext: {
+  listaVaziaSubtexto: {
     fontSize: 14,
-    color: '#aaa',
+    color: '#999',
     textAlign: 'center',
   },
-  dataContainer: {
-    flex: 1,
-    marginBottom: 20,
-  },
-  stats: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  stat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2196F3',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  tableContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  row: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  rowNumber: {
-    width: 35,
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    textAlign: 'center',
-    marginRight: 10,
-  },
-  cell: {
-    backgroundColor: '#f9f9f9',
-    padding: 8,
-    marginRight: 8,
-    borderRadius: 4,
-    minWidth: 80,
+  item: {
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
-  cellText: {
-    fontSize: 12,
-    color: '#333',
+  itemPar: {
+    backgroundColor: '#ffffff',
   },
-  moreText: {
-    textAlign: 'center',
-    color: '#999',
-    fontStyle: 'italic',
-    padding: 10,
-    marginTop: 5,
+  itemImpar: {
+    backgroundColor: '#f5f5f5',
   },
-  actions: {
+  itemCabecalho: {
     flexDirection: 'row',
-    marginTop: 10,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
-  spacer: {
-    width: 10,
+  itemNumero: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+  },
+  itemAtivo: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2196f3',
+  },
+  itemNome: {
+    fontSize: 15,
+    color: '#333',
+    lineHeight: 20,
   },
 });
 
